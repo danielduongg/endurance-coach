@@ -1,0 +1,16 @@
+# Per-function auth settings.
+# The OAuth dance and Strava's webhook arrive from outside your app,
+# so those three endpoints must accept requests without a Supabase JWT.
+# Manual backfill stays protected.
+
+[functions.strava-auth]
+verify_jwt = false
+
+[functions.strava-callback]
+verify_jwt = false
+
+[functions.strava-webhook]
+verify_jwt = false
+
+[functions.strava-backfill]
+verify_jwt = true
