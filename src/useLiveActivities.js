@@ -7,7 +7,7 @@
 // localStorage is wrapped so this also no-ops safely in sandboxes that block it.
 
 import { useCallback, useEffect, useState } from "react";
-import { FUNCTIONS_URL, supabase, stravaConfigured } from "./supabaseClient";
+import { FUNCTIONS_URL, supabase, stravaConfigured, ensureSession } from "./supabaseClient";
 
 const MI = 1609.34;
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -28,19 +28,35 @@ export function useLiveActivities({ historyDays = 180 } = {}) {
   const [activities, setActivities] = useState([]);
   const [status, setStatus] = useState("disconnected"); // disconnected | loading | live | error
 
-  // Catch the redirect back from strava-callback: ?athlete=123&strava=connected
+  // Catch the redirect back from strava-callback:
+  //   ?athlete=123&strava=connected&link=<one-time code>
+  // Exchange the code via strava-link to bind this athlete to our (anonymous)
+  // Supabase user, so RLS will let us read the athlete's rows.
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const a = params.get("athlete");
-    if (a) {
-      lsSet("strava_athlete", a);
-      setAthleteId(a);
-      const u = new URL(window.location.href);
-      u.searchParams.delete("athlete");
-      u.searchParams.delete("strava");
-      window.history.replaceState({}, "", u.pathname + (u.search || "")); // tidy URL
-    }
+    if (typeof window === "undefined" || !supabase) return;
+    let cancelled = false;
+    (async () => {
+      await ensureSession(); // anonymous session before any RLS-scoped call
+      const params = new URLSearchParams(window.location.search);
+      const a = params.get("athlete");
+      const code = params.get("link");
+      if (a && code) {
+        const { error } = await supabase.functions.invoke("strava-link", { body: { code } });
+        if (error) { console.error("strava link failed", error); if (!cancelled) setStatus("error"); }
+      }
+      if (a && !cancelled) {
+        lsSet("strava_athlete", a);
+        setAthleteId(a);
+      }
+      if (a) {
+        const u = new URL(window.location.href);
+        u.searchParams.delete("athlete");
+        u.searchParams.delete("strava");
+        u.searchParams.delete("link");
+        window.history.replaceState({}, "", u.pathname + (u.search || "")); // tidy URL
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Initial history load + realtime subscription
@@ -50,6 +66,7 @@ export function useLiveActivities({ historyDays = 180 } = {}) {
     let cancelled = false;
 
     (async () => {
+      await ensureSession(); // RLS-scoped reads need our session established first
       setStatus("loading");
       const since = new Date(Date.now() - historyDays * 864e5).toISOString().slice(0, 10);
       const { data, error } = await supabase

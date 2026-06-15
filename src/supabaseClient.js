@@ -18,3 +18,22 @@ if (!stravaConfigured && typeof console !== "undefined") {
 
 export const supabase = stravaConfigured ? createClient(url, anonKey) : null;
 export const FUNCTIONS_URL = url ? `${url}/functions/v1` : "";
+
+// Identity model: "Strava is the login." The app signs in anonymously to get a
+// real (refreshable) Supabase session so Row-Level Security can scope data to
+// this user. Connecting Strava then binds that athlete to this session
+// (see strava-link). Without a session, RLS returns nothing — i.e. fails closed.
+let _sessionPromise = null;
+export function ensureSession() {
+  if (!supabase) return Promise.resolve(null);
+  if (!_sessionPromise) {
+    _sessionPromise = (async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) return session.user.id;
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if (error) { console.error("anonymous sign-in failed", error); return null; }
+      return data.user?.id ?? null;
+    })();
+  }
+  return _sessionPromise;
+}
