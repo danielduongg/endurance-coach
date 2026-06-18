@@ -1327,6 +1327,7 @@ export default function EnduranceCoach() {
   const [manual, setManual] = useState({ date: key(new Date()), sport: "run", min: "", dist: "" });
   const [weekModes, setWeekModes] = useState({});
   const [theme, setTheme] = useState("light");
+  const [openSec, setOpenSec] = useState("about"); // setup-form: which section is expanded (one at a time)
   const fileRef = useRef(null);
   const seen = useRef(new Set());
   const tunedRef = useRef(false);
@@ -1516,14 +1517,18 @@ export default function EnduranceCoach() {
                 onChange={(e) => setDraft({ ...draft, raceDate: e.target.value })} />
             </Field>
 
-            <div className="sm:col-span-2 tc-eyebrow" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>About you</div>
+            <button type="button" className="sm:col-span-2 tc-eyebrow flex items-center justify-between" style={{ border: "none", borderTop: "1px solid var(--line)", background: "transparent", paddingTop: 12, cursor: "pointer" }} onClick={() => setOpenSec(openSec === "about" ? "" : "about")}>
+              About you
+              <ChevronDown size={14} style={{ transform: openSec === "about" ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+            </button>
+            {openSec === "about" && (<>
             <Field label="Age" hint={profile.maxHR ? "Z2 ≈ " + profile.z2[0] + "–" + profile.z2[1] + "bpm (Tanaka est. max " + profile.maxHR + ")" : "Sets your heart-rate zones"}>
-              <input type="number" min="16" max="80" className="tc-input w-full px-3 py-2 tc-mono" value={draft.age}
+              <input type="number" min="16" max="80" className="tc-input w-full px-3 py-2 tc-mono" value={String(draft.age).replace(/^0+(?=\d)/, "")}
                 onChange={(e) => setDraft({ ...draft, age: +e.target.value })} />
             </Field>
             <Field label="Weight" hint={profile.carbs ? "Sizes fueling: ~" + profile.carbs + "g carbs/hr on long sessions" : "Used only to size fueling targets"}>
               <div className="flex gap-2">
-                <input type="number" min="70" max="400" className="tc-input px-3 py-2 tc-mono flex-1" value={draft.weight}
+                <input type="number" min="70" max="400" className="tc-input px-3 py-2 tc-mono flex-1" value={String(draft.weight).replace(/^0+(?=\d)/, "")}
                   onChange={(e) => setDraft({ ...draft, weight: +e.target.value })} />
                 {["lb", "kg"].map((u) => (
                   <button key={u} className="tc-btn tc-btn-ghost px-3 py-2"
@@ -1537,7 +1542,7 @@ export default function EnduranceCoach() {
               </div>
             </Field>
             <Field label="Resting HR (optional)" hint="Sharpens the HR-based VO2max estimate">
-              <input type="number" min="30" max="100" placeholder="58" className="tc-input w-full px-3 py-2 tc-mono" value={draft.rhr}
+              <input type="number" min="30" max="100" placeholder="58" className="tc-input w-full px-3 py-2 tc-mono" value={String(draft.rhr).replace(/^0+(?=\d)/, "")}
                 onChange={(e) => setDraft({ ...draft, rhr: e.target.value })} />
             </Field>
             <Field label="Sex (optional)" hint="Only used for VO2max age norms">
@@ -1550,9 +1555,14 @@ export default function EnduranceCoach() {
               </div>
             </Field>
 
-            <div className="sm:col-span-2 tc-eyebrow" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>Your week</div>
+            </>)}
+            <button type="button" className="sm:col-span-2 tc-eyebrow flex items-center justify-between" style={{ border: "none", borderTop: "1px solid var(--line)", background: "transparent", paddingTop: 12, cursor: "pointer" }} onClick={() => setOpenSec(openSec === "week" ? "" : "week")}>
+              Your week
+              <ChevronDown size={14} style={{ transform: openSec === "week" ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
+            </button>
+            {openSec === "week" && (<>
             <Field label="Current training (hrs/week)" hint={read ? "From your data" : "Everything combined"}>
-              <input type="number" min="2" max="20" step="0.5" className="tc-input w-full px-3 py-2 tc-mono" value={draft.weeklyHours}
+              <input type="number" min="2" max="20" step="0.5" className="tc-input w-full px-3 py-2 tc-mono" value={String(draft.weeklyHours).replace(/^0+(?=\d)/, "")}
                 onChange={(e) => setDraft({ ...draft, weeklyHours: +e.target.value })} />
             </Field>
             <Field label="Training days per week" hint={read ? "From your data" : "Quality over quantity"}>
@@ -1594,6 +1604,7 @@ export default function EnduranceCoach() {
                   onChange={(e) => setDraft({ ...draft, goalTime: e.target.value })} />
               </Field>
             )}
+            </>)}
             <div className="sm:col-span-2" style={{ borderTop: "1px solid var(--line)", paddingTop: 12 }}>
               <button type="button" className="w-full flex items-center justify-between"
                 onClick={() => setDraft({ ...draft, lifts: !draft.lifts })}>
