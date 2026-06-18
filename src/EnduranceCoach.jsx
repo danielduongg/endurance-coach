@@ -1742,11 +1742,14 @@ export default function EnduranceCoach() {
 
         {/* Coach's read */}
         {read && (
-          <div className="tc-card p-4 sm:p-5 mb-4">
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <details className="tc-details tc-card p-4 sm:p-5 mb-4" name="dash" open>
+            <summary className="flex items-center justify-between mb-3 flex-wrap gap-2" style={{ cursor: "pointer" }}>
               <span className="tc-eyebrow">Coach's read · last 60 days vs what {cfg.short} demands</span>
-              {read.verdict && <span className="tc-chip" style={{ background: TONE[read.verdict.tone], color: "#fff" }}>{read.verdict.label}</span>}
-            </div>
+              <span className="flex items-center gap-2">
+                {read.verdict && <span className="tc-chip" style={{ background: TONE[read.verdict.tone], color: "#fff" }}>{read.verdict.label}</span>}
+                <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
+              </span>
+            </summary>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <div className="flex flex-col gap-3">
                 {read.benchmarks.map((b, i) => <BenchBar key={i} b={b} />)}
@@ -1764,15 +1767,18 @@ export default function EnduranceCoach() {
                 })}
               </div>
             </div>
-          </div>
+          </details>
         )}
 
         {/* VO2max analysis */}
-        <div className="tc-card p-4 sm:p-5 mb-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
+        <details className="tc-details tc-card p-4 sm:p-5 mb-4" name="dash">
+          <summary className="flex items-center justify-between flex-wrap gap-2" style={{ cursor: "pointer" }}>
             <span className="tc-eyebrow flex items-center gap-1.5"><Wind size={14} /> VO2max analysis · performance-derived (VDOT)</span>
-            {vo2 && vo2.rating && <span className="tc-chip" style={{ background: TONE[vo2.rating.tone], color: "#fff" }}>{vo2.rating.label} for age (approx.)</span>}
-          </div>
+            <span className="flex items-center gap-2">
+              {vo2 && vo2.rating && <span className="tc-chip" style={{ background: TONE[vo2.rating.tone], color: "#fff" }}>{vo2.rating.label} for age (approx.)</span>}
+              <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
+            </span>
+          </summary>
           {vo2 ? (
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mt-3">
               <div>
@@ -1819,14 +1825,17 @@ export default function EnduranceCoach() {
               Needs runs with <strong>distance</strong> (and ideally avg HR) — import a Garmin/Strava CSV with those columns, or log runs with distance below. Estimates use the Daniels–Gilbert performance model, so an honest hard effort (a 5K, a parkrun) makes it accurate.
             </div>
           )}
-        </div>
+        </details>
 
         {/* Climb to the pros — Olympic specs, broken into rungs */}
-        <div className="tc-card p-4 sm:p-5 mb-4">
-          <div className="flex items-center justify-between flex-wrap gap-2">
+        <details className="tc-details tc-card p-4 sm:p-5 mb-4" name="dash">
+          <summary className="flex items-center justify-between flex-wrap gap-2" style={{ cursor: "pointer" }}>
             <span className="tc-eyebrow flex items-center gap-1.5"><Mountain size={14} /> Climb to the pros · Olympic specs, broken into your next rung</span>
-            <span className="tc-chip" style={{ background: "var(--ink)", color: "#fff" }}>{cfg.name}</span>
-          </div>
+            <span className="flex items-center gap-2">
+              <span className="tc-chip" style={{ background: "var(--ink)", color: "#fff" }}>{cfg.name}</span>
+              <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
+            </span>
+          </summary>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-5 mt-4">
             <LadderBar L={vo2Ladder(profile.sex)} value={vo2 ? vo2.vdot : null} />
             <LadderBar L={FIVEK_LADDER} value={vo2 ? vo2.preds.find((p) => p.label === "5K").time * 60 : null} />
@@ -1850,7 +1859,7 @@ export default function EnduranceCoach() {
               </div>
             );
           })()}
-        </div>
+        </details>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
           {/* This week */}
@@ -2093,8 +2102,11 @@ export default function EnduranceCoach() {
         <div className="mt-4"><ConsistencyGrid activities={activities} /></div>
 
         {/* Load chart */}
-        <div className="tc-card p-4 sm:p-5 mt-4">
-          <div className="tc-eyebrow mb-1">Weekly hours — modality mix vs plan</div>
+        <details className="tc-details tc-card p-4 sm:p-5 mt-4" name="dash">
+          <summary className="flex items-center justify-between" style={{ cursor: "pointer" }}>
+            <span className="tc-eyebrow">Weekly hours — modality mix vs plan</span>
+            <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
+          </summary>
           <div style={{ width: "100%", height: 230 }}>
             <ResponsiveContainer>
               <ComposedChart data={chartData} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
@@ -2111,10 +2123,10 @@ export default function EnduranceCoach() {
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-        </div>
+        </details>
 
         {/* Badges */}
-        <details className="tc-details tc-card p-4 sm:p-5 mt-4">
+        <details className="tc-details tc-card p-4 sm:p-5 mt-4" name="dash">
           <summary className="flex items-center justify-between">
             <span className="tc-eyebrow">Badges · {game.earnedCount} of {game.badges.length} earned</span>
             <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
@@ -2135,7 +2147,7 @@ export default function EnduranceCoach() {
         </details>
 
         {/* The science */}
-        <details className="tc-details tc-card p-4 sm:p-5 mt-4">
+        <details className="tc-details tc-card p-4 sm:p-5 mt-4" name="dash">
           <summary className="flex items-center justify-between">
             <span className="tc-eyebrow flex items-center gap-1.5"><FlaskConical size={14} /> The science — what this app does, and why</span>
             <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
@@ -2152,7 +2164,7 @@ export default function EnduranceCoach() {
         </details>
 
         {/* Full plan */}
-        <details className="tc-details tc-card p-4 sm:p-5 mt-4">
+        <details className="tc-details tc-card p-4 sm:p-5 mt-4" name="dash">
           <summary className="flex items-center justify-between">
             <span className="tc-eyebrow">Full plan · {plan.totalWeeks} weeks · peaks at {fmtHM(plan.peak)}/wk{plan.P.masters ? " · masters recovery cycle" : ""}</span>
             <ChevronDown size={16} style={{ color: "var(--ink-soft)" }} />
