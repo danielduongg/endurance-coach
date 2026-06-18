@@ -1328,6 +1328,7 @@ export default function EnduranceCoach() {
   const [weekModes, setWeekModes] = useState({});
   const [theme, setTheme] = useState("light");
   const [openSec, setOpenSec] = useState("about"); // setup-form: which section is expanded (one at a time)
+  const [expandedDay, setExpandedDay] = useState(null); // this-week: which day's full workout is expanded
   const fileRef = useRef(null);
   const seen = useRef(new Set());
   const tunedRef = useRef(false);
@@ -1907,8 +1908,10 @@ export default function EnduranceCoach() {
                 const done = due && d.hours && loggedHrs >= d.hours * 0.6;
                 const missed = due && !done && key(d.date) < todayKey;
                 const shownHrs = d.hours ? q25(d.hours * (d.type === "race" ? 1 : adjust)) : d.hours;
+                const dk = key(d.date);
+                const isOpen = expandedDay === dk;
                 return (
-                  <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl"
+                  <div key={i} onClick={() => setExpandedDay(isOpen ? null : dk)} className={"flex gap-3 p-2.5 rounded-xl cursor-pointer " + (isOpen ? "items-start" : "items-center")}
                     style={{ background: isToday ? "var(--paper)" : "transparent", border: isToday ? "1.5px solid var(--ink)" : "1px solid var(--line)" }}>
                     <div className="tc-display text-center" style={{ width: 42 }}>
                       <div style={{ fontSize: 12, color: "var(--ink-soft)", fontWeight: 600 }}>{DOW[(d.date.getDay() + 6) % 7]}</div>
@@ -1923,14 +1926,20 @@ export default function EnduranceCoach() {
                       </span>
                     )}
                     <div className="flex-1 min-w-0">
-                      <div className="font-medium truncate">
+                      <div className={"font-medium" + (isOpen ? "" : " truncate")}>
                         {d.title}{shownHrs > 0 && <span className="tc-mono text-sm">  · {fmtHM(shownHrs)}</span>}
                       </div>
-                      <div className="text-xs truncate" style={{ color: "var(--ink-soft)" }}>{d.sub}{d.lift ? "  ＋ then lift: " + d.lift.sub : ""}</div>
+                      <div className={"text-xs" + (isOpen ? "" : " truncate")} style={{ color: "var(--ink-soft)" }}>{d.sub}{!isOpen && d.lift ? "  ＋ then lift: " + d.lift.sub : ""}</div>
+                      {isOpen && d.lift && (
+                        <div className="text-xs mt-1 flex items-start gap-1.5" style={{ color: "var(--ink-soft)" }}>
+                          <Dumbbell size={12} style={{ flexShrink: 0, marginTop: 2 }} /> Then lift: {d.lift.sub}
+                        </div>
+                      )}
                     </div>
                     {done && <span className="tc-mono text-xs" style={{ color: "var(--green)" }}>+{Math.round((d.hours || 0) * 100)}</span>}
                     {done && <CheckCircle2 size={18} style={{ color: "var(--green)" }} title={"Logged " + fmtHM(loggedHrs)} />}
                     {missed && <span className="text-xs" style={{ color: "var(--ink-soft)" }}>missed</span>}
+                    <ChevronDown size={15} style={{ color: "var(--ink-soft)", flexShrink: 0, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }} />
                   </div>
                 );
               })}
