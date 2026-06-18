@@ -1296,14 +1296,28 @@ function CoachCorner() {
 /* ------------------------------------------------------------------ */
 /*  App                                                                */
 /* ------------------------------------------------------------------ */
+// Persist the setup + profile across sessions so reopening the app restores
+// everything (the Strava connection itself persists via the Supabase session
+// kept in useLiveActivities). Versioned keys so the shape can evolve safely.
+const LS = {
+  get(k, fb) { try { const v = localStorage.getItem(k); return v == null ? fb : JSON.parse(v); } catch { return fb; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* ignore */ } },
+};
+const DEFAULT_DRAFT = {
+  raceType: "full", goalTime: "",            // default race: Ironman-distance (140.6)
+  weeklyHours: 5, daysPerWeek: 5, weakest: "run", capMin: 60,
+  age: 29, weight: 160, wUnit: "lb", height: "", hUnit: "in", rhr: "", sex: "",
+  lifts: false, liftDays: 2, liftFocus: "full",
+};
+
 export default function EnduranceCoach() {
-  const [settings, setSettings] = useState(null);
-  const [draft, setDraft] = useState({
-    raceDate: key(addDays(new Date(), 7 * 20)), raceType: "hyrox", goalTime: "",
-    weeklyHours: 5, daysPerWeek: 5, weakest: "run", capMin: 60,
-    age: 29, weight: 160, wUnit: "lb", height: "", hUnit: "in", rhr: "", sex: "",
-    lifts: false, liftDays: 2, liftFocus: "full",
-  });
+  // Restore a committed plan (settings) and the setup form (draft) from last time.
+  const [settings, setSettings] = useState(() => LS.get("ec_settings_v1", null));
+  const [draft, setDraft] = useState(() => ({
+    raceDate: key(addDays(new Date(), 7 * 20)),
+    ...DEFAULT_DRAFT,
+    ...LS.get("ec_draft_v1", {}),
+  }));
   const [localActs, setLocalActs] = useState([]);
   const live = useLiveActivities();
   const synced = !!live.athleteId;
@@ -1383,6 +1397,10 @@ export default function EnduranceCoach() {
       setTimeout(() => setToast(null), 4200);
     }
   }, [synced, live.activities, read, settings]);
+
+  // Persist the setup form and the committed plan so reopening restores them.
+  useEffect(() => { LS.set("ec_draft_v1", draft); }, [draft]);
+  useEffect(() => { LS.set("ec_settings_v1", settings); }, [settings]);
 
   const loggedByDaySport = useMemo(() => {
     const m = {};
