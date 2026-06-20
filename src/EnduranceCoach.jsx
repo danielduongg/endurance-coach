@@ -10,7 +10,7 @@ import {
   Medal, Radio, Link2, Mountain, Sun, Sparkles,
 } from "lucide-react";
 import { useLiveActivities } from "./useLiveActivities.js";
-import { supabase, stravaLoginUrl, signInWithGoogle, signOut as authSignOut } from "./supabaseClient.js";
+import { supabase, stravaLoginUrl, signInWithGoogle, signOut as authSignOut, loadProfile, saveProfile } from "./supabaseClient.js";
 
 /* ------------------------------------------------------------------ */
 /*  Design tokens — "race day" system, endurance edition               */
@@ -1643,6 +1643,38 @@ export default function EnduranceCoach() {
   // Persist the setup form and the committed plan so reopening restores them.
   useEffect(() => { LS.set("ec_draft_v1", draft); }, [draft]);
   useEffect(() => { LS.set("ec_settings_v1", settings); }, [settings]);
+
+  // --- Save personal data to your account (cloud), not just this browser ---
+  // On login, pull the saved profile for this account. If there's none yet
+  // (e.g. first sign-in), migrate whatever's already in this browser up so
+  // nothing is lost. Afterwards, mirror any setup change back to the account.
+  const profileSynced = useRef(false);
+  useEffect(() => {
+    if (!supabase || !live.authReady) return;
+    if (!user) { profileSynced.current = false; return; }
+    if (profileSynced.current) return;
+    let cancelled = false;
+    (async () => {
+      const remote = await loadProfile();
+      if (cancelled) return;
+      if (remote && (remote.settings || remote.draft)) {
+        if (remote.settings) setSettings(remote.settings);
+        if (remote.draft) setDraft((d) => ({ ...d, ...remote.draft }));
+      } else {
+        const ls = LS.get("ec_settings_v1", null);
+        const ld = LS.get("ec_draft_v1", null);
+        if (ls || ld) await saveProfile({ settings: ls, draft: ld });
+      }
+      profileSynced.current = true;
+    })();
+    return () => { cancelled = true; };
+  }, [user, live.authReady]);
+
+  useEffect(() => {
+    if (!supabase || !user || !profileSynced.current) return;
+    const t = setTimeout(() => saveProfile({ settings, draft }), 800);
+    return () => clearTimeout(t);
+  }, [settings, draft, user]);
 
   const loggedByDaySport = useMemo(() => {
     const m = {};

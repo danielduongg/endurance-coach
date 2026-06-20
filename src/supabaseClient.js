@@ -46,6 +46,31 @@ export async function signInWithGoogle() {
   await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: appReturn() } });
 }
 
+// --- Per-user profile (training setup) saved to the account ---------------
+// So personal data (race, age, weight, weekly hours, the in-progress setup
+// form) follows the user across devices instead of living only in this
+// browser. RLS scopes every read/write to the signed-in user's own row.
+export async function loadProfile() {
+  if (!supabase) return null;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from("profiles").select("settings, draft").eq("user_id", user.id).maybeSingle();
+  if (error) { console.warn("loadProfile failed:", error.message); return null; }
+  return data; // { settings, draft } | null
+}
+
+export async function saveProfile(patch) {
+  if (!supabase) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  const row = { user_id: user.id, updated_at: new Date().toISOString() };
+  if ("settings" in patch) row.settings = patch.settings;
+  if ("draft" in patch) row.draft = patch.draft;
+  const { error } = await supabase.from("profiles").upsert(row, { onConflict: "user_id" });
+  if (error) console.warn("saveProfile failed:", error.message);
+}
+
 export async function signOut() {
   if (supabase) await supabase.auth.signOut();
 }
