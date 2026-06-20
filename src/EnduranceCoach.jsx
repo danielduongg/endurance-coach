@@ -10,6 +10,7 @@ import {
   Medal, Radio, Link2, Mountain, Sun, Sparkles,
 } from "lucide-react";
 import { useLiveActivities } from "./useLiveActivities.js";
+import { supabase, stravaLoginUrl, signInWithGoogle, signOut as authSignOut } from "./supabaseClient.js";
 
 /* ------------------------------------------------------------------ */
 /*  Design tokens — "race day" system, endurance edition               */
@@ -1314,6 +1315,214 @@ const DEFAULT_DRAFT = {
   lifts: false, liftDays: 2, liftFocus: "full",
 };
 
+/* ----------------------- Auth / paywall screens ------------------------ */
+function Splash({ theme, label }) {
+  return (
+    <div className={"tc-root flex items-center justify-center p-8" + (theme === "dark" ? " tc-dark" : "")}>
+      <style>{CSS}</style>
+      <div className="tc-mono text-sm" style={{ color: "var(--ink-soft)" }}>{label}</div>
+    </div>
+  );
+}
+
+const MONTHLY_PRICE = "$12"; // ← set to your real Stripe monthly price (must match STRIPE_PRICE_ID)
+
+function SignInButtons({ stack }) {
+  return (
+    <div className={"flex gap-2 " + (stack ? "flex-col" : "flex-col sm:flex-row")}>
+      <a className="tc-btn py-3 px-5 flex items-center justify-center gap-2 text-base"
+        style={{ background: "#FC4C02", color: "#fff" }} href={stravaLoginUrl()}>
+        <Radio size={18} /> Sign in with Strava
+      </a>
+      <button className="tc-btn tc-btn-ghost py-3 px-5 flex items-center justify-center gap-2 text-base"
+        onClick={() => signInWithGoogle()}>
+        Continue with Google
+      </button>
+    </div>
+  );
+}
+
+function Landing({ theme }) {
+  const features = [
+    [Radio, "Live Strava sync", "Connect once. Every watch upload appears in seconds — no files, no fuss — and your plan adjusts to what you actually did."],
+    [Activity, "Adaptive race plans", "One engine for Ironman, 70.3, marathon, HYROX and Spartan — periodized, tapered, and re-planned around your real week."],
+    [Wind, "VO2max & readiness", "VDOT from your real efforts, ACWR load monitoring, and an 80/20 intensity check — push when fresh, back off before injury."],
+    [Dumbbell, "Strength, built in", "Concurrent-training aware: lifts stack onto hard days and taper toward race day, so the gym helps your race instead of fighting it."],
+  ];
+  const steps = [
+    ["1", "Sign in with Strava", "One tap connects your account and pulls 180 days of history, so your plan starts from who you actually are."],
+    ["2", "Get your plan", "Pick a race and date — the engine builds a periodized, science-based plan tuned to your fitness and schedule."],
+    ["3", "Train — it adapts", "Every session syncs automatically; readiness, load and your plan update in real time."],
+  ];
+  const included = [
+    "Unlimited adaptive training plans, any race",
+    "Live Strava auto-sync + 180-day history",
+    "VO2max / VDOT, readiness (ACWR) & 80/20 tracking",
+    "Strength integration and weekly adaptation",
+    "Mobile-ready, light/dark — your data private to you",
+  ];
+  const faqs = [
+    ["Do I need a credit card to start?", "No. Sign in and use everything free for 30 days. You only add a card if you choose to subscribe afterward."],
+    ["How do I cancel?", "Anytime, in one click from your account — you keep access until the period ends. No emails, no hassle."],
+    ["Which races are supported?", "Ironman (140.6), 70.3, 5K through marathon, HYROX, DEKA and Spartan — one engine, tuned per race."],
+    ["Is my data private?", "Yes. Your Strava data is shown only to you, never sold, and never fed into AI/ML — the coaching engine is heuristic and evidence-based."],
+  ];
+  return (
+    <div className={"tc-root" + (theme === "dark" ? " tc-dark" : "")}>
+      <style>{CSS}</style>
+
+      <nav className="sticky top-0 z-10" style={{ backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", background: "var(--paper)", borderBottom: "1px solid var(--line)" }}>
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+          <span className="tc-display flex items-center gap-2" style={{ fontWeight: 700, fontSize: 18 }}>
+            <Activity size={18} style={{ color: "var(--orange)" }} /> Endurance Coach
+          </span>
+          <div className="flex items-center gap-4">
+            <a href="#how" className="text-sm hidden sm:inline" style={{ color: "var(--ink-soft)" }}>How it works</a>
+            <a href="#pricing" className="text-sm hidden sm:inline" style={{ color: "var(--ink-soft)" }}>Pricing</a>
+            <a className="tc-btn tc-btn-ghost px-3 py-1.5 text-sm" href={stravaLoginUrl()}>Sign in</a>
+          </div>
+        </div>
+      </nav>
+
+      <header className="max-w-5xl mx-auto px-4 pt-12 sm:pt-20 pb-10 text-center">
+        <div className="tc-eyebrow" style={{ color: "var(--orange)" }}>Adaptive endurance coach · evidence-based</div>
+        <h1 className="tc-display mx-auto" style={{ fontSize: "clamp(40px,8vw,76px)", fontWeight: 700, lineHeight: 1.02, margin: "12px 0 0", maxWidth: 760 }}>
+          Pick a start line.<br />Train around your life.
+        </h1>
+        <p className="mt-5 mx-auto" style={{ color: "var(--ink-soft)", maxWidth: 560, fontSize: 18 }}>
+          Ironman to HYROX to Spartan — one engine, tuned per race, built on published training science. Connect Strava and your plan starts from who you actually are.
+        </p>
+        <div className="mt-7 flex justify-center"><SignInButtons /></div>
+        <div className="mt-3 text-sm" style={{ color: "var(--ink-soft)" }}>30-day free trial · no card to start · cancel anytime</div>
+        <div className="mt-7 flex flex-wrap gap-2 justify-center">
+          {["Ironman 140.6", "70.3", "Marathon", "HYROX", "Spartan"].map((r) => (
+            <span key={r} className="tc-chip" style={{ background: "var(--steel-soft)", color: "var(--steel)" }}>{r}</span>
+          ))}
+        </div>
+      </header>
+
+      <section id="features" className="max-w-5xl mx-auto px-4 py-10">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {features.map(([Icon, title, body]) => (
+            <div key={title} className="tc-card p-5">
+              <Icon size={22} style={{ color: "var(--orange)" }} />
+              <div className="tc-display mt-2" style={{ fontSize: 19, fontWeight: 600 }}>{title}</div>
+              <p className="text-sm mt-1" style={{ color: "var(--ink-soft)" }}>{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="how" className="max-w-5xl mx-auto px-4 py-10">
+        <div className="tc-eyebrow text-center mb-6" style={{ color: "var(--orange)" }}>How it works</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {steps.map(([n, title, body]) => (
+            <div key={n} className="tc-card p-5">
+              <div className="tc-display" style={{ fontSize: 28, fontWeight: 700, color: "var(--orange)" }}>{n}</div>
+              <div className="tc-display mt-1" style={{ fontSize: 18, fontWeight: 600 }}>{title}</div>
+              <p className="text-sm mt-1" style={{ color: "var(--ink-soft)" }}>{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section id="pricing" className="max-w-5xl mx-auto px-4 py-10">
+        <div className="tc-eyebrow text-center" style={{ color: "var(--orange)" }}>How the subscription works</div>
+        <h2 className="tc-display text-center mt-2" style={{ fontSize: "clamp(28px,5vw,40px)", fontWeight: 700 }}>Free for 30 days. Then keep going.</h2>
+        <p className="text-center mt-3 mx-auto" style={{ color: "var(--ink-soft)", maxWidth: 560 }}>
+          Start today with full access — no card needed. After 30 days, subscribe to keep your plan and live sync. Your data is saved the whole time, and you can cancel anytime.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-7">
+          {[
+            ["Day 0", "Sign in & start", "Full access, instantly. No payment details."],
+            ["Days 1–30", "Train free", "Everything unlocked — build your fitness and your plan."],
+            ["Day 30+", "Subscribe to continue", MONTHLY_PRICE + "/month. Cancel anytime, keep your data."],
+          ].map(([k, t, b]) => (
+            <div key={k} className="tc-card p-4">
+              <div className="tc-eyebrow" style={{ color: "var(--steel)" }}>{k}</div>
+              <div className="tc-display mt-1" style={{ fontSize: 17, fontWeight: 600 }}>{t}</div>
+              <p className="text-sm mt-1" style={{ color: "var(--ink-soft)" }}>{b}</p>
+            </div>
+          ))}
+        </div>
+
+        <div className="tc-card p-6 mt-6 mx-auto" style={{ maxWidth: 460, textAlign: "center" }}>
+          <div className="tc-eyebrow" style={{ color: "var(--orange)" }}>Endurance Coach Pro</div>
+          <div className="flex items-baseline justify-center gap-1 mt-2">
+            <span className="tc-display" style={{ fontSize: 48, fontWeight: 700 }}>{MONTHLY_PRICE}</span>
+            <span style={{ color: "var(--ink-soft)" }}>/ month</span>
+          </div>
+          <div className="text-sm" style={{ color: "var(--green)" }}>after your 30-day free trial</div>
+          <div className="flex flex-col gap-2 mt-5 text-left">
+            {included.map((it) => (
+              <div key={it} className="flex items-start gap-2 text-sm">
+                <CheckCircle2 size={16} style={{ color: "var(--green)", flexShrink: 0, marginTop: 2 }} /> <span>{it}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6"><SignInButtons stack /></div>
+          <p className="text-xs mt-3" style={{ color: "var(--ink-soft)" }}>No card to start · cancel anytime · secure checkout by Stripe</p>
+        </div>
+      </section>
+
+      <section className="max-w-3xl mx-auto px-4 py-10">
+        <div className="tc-eyebrow text-center mb-5" style={{ color: "var(--orange)" }}>FAQ</div>
+        <div className="flex flex-col gap-3">
+          {faqs.map(([q, a]) => (
+            <div key={q} className="tc-card p-4">
+              <div className="tc-display" style={{ fontSize: 16, fontWeight: 600 }}>{q}</div>
+              <p className="text-sm mt-1" style={{ color: "var(--ink-soft)" }}>{a}</p>
+            </div>
+          ))}
+        </div>
+        <div className="text-center mt-8"><SignInButtons /></div>
+      </section>
+
+      <footer style={{ borderTop: "1px solid var(--line)" }}>
+        <div className="max-w-5xl mx-auto px-4 py-6 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs" style={{ color: "var(--ink-soft)" }}>
+          <span>© {new Date().getFullYear()} Endurance Coach · Powered by Strava</span>
+          <span>Methods: Seiler · Daniels–Gilbert · Mujika · Gabbett · Jeukendrup. Estimates, not medical advice.</span>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+function Paywall({ theme, sub, onSubscribe, onSignOut }) {
+  return (
+    <div className={"tc-root flex items-center justify-center p-4 sm:p-8" + (theme === "dark" ? " tc-dark" : "")}>
+      <style>{CSS}</style>
+      <div className="tc-card p-6 sm:p-8" style={{ maxWidth: 440, textAlign: "center" }}>
+        <Trophy size={28} style={{ color: "var(--amber)", margin: "0 auto" }} />
+        <h2 className="tc-display mt-3" style={{ fontSize: 26, fontWeight: 700 }}>
+          {sub === "past_due" ? "Your payment needs attention" : "Your free trial has ended"}
+        </h2>
+        <p className="mt-2" style={{ color: "var(--ink-soft)" }}>
+          Subscribe to keep your training plan, live Strava sync, and progress. Your data is saved — it comes right back.
+        </p>
+        <button className="tc-btn tc-btn-primary w-full py-3 text-base mt-5" onClick={onSubscribe}>Subscribe</button>
+        <button className="tc-btn tc-btn-ghost w-full py-2 text-sm mt-2" onClick={onSignOut}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+function TrialBanner({ trialEndsAt, sub, onSubscribe }) {
+  if (sub === "active" || sub === "trialing" || !trialEndsAt) return null;
+  const days = Math.ceil((trialEndsAt.getTime() - Date.now()) / 864e5);
+  if (days > 30) return null;
+  return (
+    <div className="tc-card p-2.5 mb-3 flex items-center justify-between gap-2 flex-wrap"
+      style={{ background: "var(--amber-soft)", borderColor: "transparent" }}>
+      <span className="text-sm" style={{ color: "var(--ink)" }}>
+        {days > 0 ? days + (days === 1 ? " day" : " days") + " left in your free trial" : "Your free trial has ended"}
+      </span>
+      <button className="tc-btn tc-btn-primary px-3 py-1.5 text-sm" onClick={onSubscribe}>Subscribe</button>
+    </div>
+  );
+}
+
 export default function EnduranceCoach() {
   // Restore a committed plan (settings) and the setup form (draft) from last time.
   const [settings, setSettings] = useState(() => LS.get("ec_settings_v1", null));
@@ -1336,6 +1545,33 @@ export default function EnduranceCoach() {
   const fileRef = useRef(null);
   const seen = useRef(new Set());
   const tunedRef = useRef(false);
+
+  // --- Auth + access gate (login + 30-day trial / subscription) ---
+  const user = live.user;
+  const [access, setAccess] = useState(null);       // null = checking, true/false
+  const [trialEndsAt, setTrialEndsAt] = useState(null);
+  const [subStatus, setSubStatus] = useState(null);
+  useEffect(() => {
+    if (!supabase || !user) { setAccess(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("billing")
+        .select("trial_started_at, subscription_status, current_period_end, comped")
+        .eq("user_id", user.id).maybeSingle();
+      if (cancelled) return;
+      const tEnd = data?.trial_started_at ? new Date(new Date(data.trial_started_at).getTime() + 30 * 864e5) : null;
+      const ok = !!data && (data.comped || ["active", "trialing"].includes(data.subscription_status) || (tEnd && Date.now() < tEnd.getTime()));
+      setTrialEndsAt(tEnd); setSubStatus(data?.subscription_status ?? null); setAccess(ok);
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const startCheckout = async () => {
+    if (!supabase) return;
+    const { data, error } = await supabase.functions.invoke("create-checkout-session", { body: {} });
+    if (error || !data?.url) { setToast("Could not start checkout — try again."); setTimeout(() => setToast(null), 4000); return; }
+    window.location.href = data.url;
+  };
 
   const plan = useMemo(() => (settings ? generatePlan(settings) : null), [settings]);
   const stats = useMemo(() => computeStats(activities), [activities]);
@@ -1442,6 +1678,14 @@ export default function EnduranceCoach() {
     return rows.slice(-12);
   }, [plan, activities, currentWeek]);
 
+  // --- Gate: public landing → login → trial/subscription → the app ---
+  if (live.configured) {
+    if (!live.authReady) return <Splash theme={theme} label="Loading…" />;
+    if (!user) return <Landing theme={theme} />;
+    if (access === null) return <Splash theme={theme} label="Checking your access…" />;
+    if (!access) return <Paywall theme={theme} sub={subStatus} onSubscribe={startCheckout} onSignOut={authSignOut} />;
+  }
+
   /* ----------------------------- Setup ----------------------------- */
   if (!settings) {
     const cfg = RACES[draft.raceType];
@@ -1450,6 +1694,7 @@ export default function EnduranceCoach() {
       <div className={"tc-root flex items-center justify-center p-4 sm:p-8" + (theme === "dark" ? " tc-dark" : "")}>
         <style>{CSS}</style>
         <div className="w-full max-w-xl">
+          <TrialBanner trialEndsAt={trialEndsAt} sub={subStatus} onSubscribe={startCheckout} />
           <div className="flex items-center justify-between">
             <div className="tc-eyebrow mb-2" style={{ color: "var(--orange)" }}>Adaptive endurance coach · evidence-based</div>
             <button className="tc-btn tc-btn-ghost p-2" title="Toggle light / dark" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
@@ -1738,9 +1983,11 @@ export default function EnduranceCoach() {
               onClick={() => { setDraft({ ...settings }); setSettings(null); }}>
               <Settings size={18} />
             </button>
+            <button className="tc-btn tc-btn-ghost px-3 py-2 text-sm" title="Sign out" onClick={() => authSignOut()}>Sign out</button>
           </div>
         </div>
 
+        <TrialBanner trialEndsAt={trialEndsAt} sub={subStatus} onSubscribe={startCheckout} />
         <div className="mt-3 mb-5"><CourseLine plan={plan} /></div>
 
         <FormRings rings={rings} />

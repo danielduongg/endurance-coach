@@ -1,10 +1,6 @@
-// Frontend Supabase client. Uses the ANON key only — never ship the service-role key.
-// Set these in your host's env (and .env locally):
-//   VITE_SUPABASE_URL=https://<project-ref>.supabase.co
-//   VITE_SUPABASE_ANON_KEY=<anon public key>
-// Until they're set, `supabase` is null and the app runs in offline mode
-// (CSV import / manual logging / demo) with the Strava button disabled.
-
+// Frontend Supabase client + auth helpers.
+// Real accounts only: sign in with Strava (primary) or Google. No anonymous sessions.
+//   VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY must be set (Vercel + .env).
 import { createClient } from "@supabase/supabase-js";
 
 const env = (typeof import.meta !== "undefined" && import.meta.env) || {};
@@ -13,27 +9,43 @@ const anonKey = env.VITE_SUPABASE_ANON_KEY || (typeof window !== "undefined" && 
 
 export const stravaConfigured = Boolean(url && anonKey);
 if (!stravaConfigured && typeof console !== "undefined") {
-  console.warn("Strava live sync disabled — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to enable it.");
+  console.warn("Backend not configured — set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.");
 }
 
 export const supabase = stravaConfigured ? createClient(url, anonKey) : null;
 export const FUNCTIONS_URL = url ? `${url}/functions/v1` : "";
 
-// Identity model: "Strava is the login." The app signs in anonymously to get a
-// real (refreshable) Supabase session so Row-Level Security can scope data to
-// this user. Connecting Strava then binds that athlete to this session
-// (see strava-link). Without a session, RLS returns nothing — i.e. fails closed.
-let _sessionPromise = null;
-export function ensureSession() {
-  if (!supabase) return Promise.resolve(null);
-  if (!_sessionPromise) {
-    _sessionPromise = (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) return session.user.id;
-      const { data, error } = await supabase.auth.signInAnonymously();
-      if (error) { console.error("anonymous sign-in failed", error); return null; }
-      return data.user?.id ?? null;
-    })();
-  }
-  return _sessionPromise;
+const appReturn = () =>
+  typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
+
+// Returns the current signed-in user id, or null. (No anonymous sign-in anymore —
+// access is gated by login + trial/subscription.)
+export async function ensureSession() {
+  if (!supabase) return null;
+  const { data: { session } } = await supabase.auth.getSession();
+  return session?.user?.id ?? null;
+}
+
+// Sign in with Strava (primary): one tap = login + data connection. strava-auth →
+// strava-callback creates/loads the Strava-backed account, links data, and logs in.
+export function stravaLoginUrl() {
+  return stravaConfigured
+    ? `${FUNCTIONS_URL}/strava-auth?mode=login&return=${encodeURIComponent(appReturn())}`
+    : "";
+}
+
+// Connect Strava data to an already-signed-in (e.g. Google) account.
+export function stravaConnectUrl() {
+  return stravaConfigured
+    ? `${FUNCTIONS_URL}/strava-auth?mode=link&return=${encodeURIComponent(appReturn())}`
+    : "";
+}
+
+export async function signInWithGoogle() {
+  if (!supabase) return;
+  await supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: appReturn() } });
+}
+
+export async function signOut() {
+  if (supabase) await supabase.auth.signOut();
 }
