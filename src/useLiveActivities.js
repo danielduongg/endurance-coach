@@ -1,13 +1,13 @@
-// useLiveActivities — real Strava sync for the deployed app.
+// useLiveActivities — real Strava sync for signed-in users.
 //
-// Flow: watch → Strava → webhook → Postgres → realtime → here.
-// Returns activities in the app's shape { id, key, sport, hours, distMi, avgHR },
-// so distance + HR flow through to the VO2max engine and the 80/20 check.
-//
-// localStorage is wrapped so this also no-ops safely in sandboxes that block it.
+// Auth: real accounts (Strava or Google). On return from "Sign in with Strava",
+// the URL carries a one-time login token (token_hash) we exchange via verifyOtp.
+// On the Google path, the URL carries a one-time `link` code we exchange via the
+// strava-link function to attach the athlete to the account. Data is read under
+// RLS (scoped to the signed-in user), so no client-side athlete filter is required.
 
 import { useCallback, useEffect, useState } from "react";
-import { FUNCTIONS_URL, supabase, stravaConfigured, ensureSession } from "./supabaseClient";
+import { FUNCTIONS_URL, supabase, stravaConfigured, stravaConnectUrl } from "./supabaseClient";
 
 const MI = 1609.34;
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -17,92 +17,98 @@ const lsDel = (k) => { try { localStorage.removeItem(k); } catch { /* ignore */ 
 const toApp = (r) => ({
   id: r.id,
   key: r.day,
-  sport: r.sport === "support" ? "strength" : r.sport, // tolerate older rows
+  sport: r.sport === "support" ? "strength" : r.sport,
   hours: Number(r.hours),
   distMi: r.distance_m != null ? Number(r.distance_m) / MI : null,
   avgHR: r.avg_hr != null ? Number(r.avg_hr) : null,
 });
 
 export function useLiveActivities({ historyDays = 180 } = {}) {
-  const [athleteId, setAthleteId] = useState(() => lsGet("strava_athlete"));
+  const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(false);
   const [activities, setActivities] = useState([]);
   const [status, setStatus] = useState("disconnected"); // disconnected | loading | live | error
 
-  // Catch the redirect back from strava-callback:
-  //   ?athlete=123&strava=connected&link=<one-time code>
-  // Exchange the code via strava-link to bind this athlete to our (anonymous)
-  // Supabase user, so RLS will let us read the athlete's rows.
+  // Establish the session: finish a Strava login if the URL carries a login token,
+  // then track auth state.
   useEffect(() => {
-    if (typeof window === "undefined" || !supabase) return;
-    let cancelled = false;
+    if (!supabase) { setAuthReady(true); return; }
+    let sub;
     (async () => {
-      await ensureSession(); // anonymous session before any RLS-scoped call
-      const params = new URLSearchParams(window.location.search);
-      const a = params.get("athlete");
-      const code = params.get("link");
-      if (a && code) {
-        const { error } = await supabase.functions.invoke("strava-link", { body: { code } });
-        if (error) { console.error("strava link failed", error); if (!cancelled) setStatus("error"); }
-      }
-      if (a && !cancelled) {
-        lsSet("strava_athlete", a);
-        setAthleteId(a);
-      }
-      if (a) {
-        const u = new URL(window.location.href);
-        u.searchParams.delete("athlete");
-        u.searchParams.delete("strava");
-        u.searchParams.delete("link");
-        window.history.replaceState({}, "", u.pathname + (u.search || "")); // tidy URL
-      }
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tokenHash = params.get("token_hash");
+        if (tokenHash && params.get("login") === "strava") {
+          const { error } = await supabase.auth.verifyOtp({ type: "magiclink", token_hash: tokenHash });
+          if (error) console.error("strava login failed", error);
+        }
+      } catch (e) { console.error(e); }
+      const { data: { session } } = await supabase.auth.getSession();
+      setUser(session?.user ?? null);
+      setAuthReady(true);
+      sub = supabase.auth.onAuthStateChange((_e, s) => setUser(s?.user ?? null)).data.subscription;
     })();
-    return () => { cancelled = true; };
+    return () => { sub?.unsubscribe?.(); };
   }, []);
 
-  // Initial history load + realtime subscription
+  // Once signed in, exchange a Strava `link` code (Google path) and tidy the URL.
   useEffect(() => {
-    if (!athleteId || !supabase) return;
+    if (typeof window === "undefined" || !supabase || !authReady) return;
+    const params = new URLSearchParams(window.location.search);
+    const a = params.get("athlete");
+    const code = params.get("link");
+    if (a) lsSet("strava_athlete", a);
+    (async () => {
+      if (code && user) {
+        const { error } = await supabase.functions.invoke("strava-link", { body: { code } });
+        if (error) console.error("strava link failed", error);
+      }
+      if (a || code || params.get("login") || params.get("token_hash") || params.get("strava")) {
+        const u = new URL(window.location.href);
+        ["athlete", "strava", "link", "login", "token_hash", "type"].forEach((k) => u.searchParams.delete(k));
+        window.history.replaceState({}, "", u.pathname + (u.search || ""));
+      }
+    })();
+  }, [authReady, user]);
+
+  // Athlete id, straight from the session (set server-side at login/link), with a
+  // localStorage fallback for the moment right after the redirect.
+  const athleteId = user?.app_metadata?.athlete_id ?? lsGet("strava_athlete");
+
+  // Initial history load + realtime subscription (RLS scopes both to this user).
+  useEffect(() => {
+    if (!supabase || !user) { setActivities([]); setStatus("disconnected"); return; }
     let channel;
     let cancelled = false;
-
     (async () => {
-      await ensureSession(); // RLS-scoped reads need our session established first
       setStatus("loading");
       const since = new Date(Date.now() - historyDays * 864e5).toISOString().slice(0, 10);
-      const { data, error } = await supabase
-        .from("activities")
-        .select("id, day, sport, hours, distance_m, avg_hr")
-        .eq("athlete_id", athleteId)
-        .gte("day", since)
-        .order("day", { ascending: true });
-
+      let q = supabase.from("activities").select("id, day, sport, hours, distance_m, avg_hr")
+        .gte("day", since).order("day", { ascending: true });
+      if (athleteId) q = q.eq("athlete_id", athleteId);
+      const { data, error } = await q;
       if (cancelled) return;
       if (error) { console.error(error); setStatus("error"); return; }
       setActivities(data.map(toApp));
       setStatus("live");
 
       channel = supabase
-        .channel(`activities-${athleteId}`)
-        .on(
-          "postgres_changes",
-          { event: "*", schema: "public", table: "activities", filter: `athlete_id=eq.${athleteId}` },
-          (payload) => {
-            setActivities((prev) => {
-              if (payload.eventType === "DELETE") return prev.filter((x) => x.id !== payload.old.id);
-              const row = toApp(payload.new);
-              const i = prev.findIndex((x) => x.id === row.id);
-              if (i >= 0) { const copy = [...prev]; copy[i] = row; return copy; }
-              return [...prev, row];
-            });
-          },
-        )
+        .channel("activities-" + user.id)
+        .on("postgres_changes", { event: "*", schema: "public", table: "activities" }, (payload) => {
+          setActivities((prev) => {
+            if (payload.eventType === "DELETE") return prev.filter((x) => x.id !== payload.old.id);
+            const row = toApp(payload.new);
+            const i = prev.findIndex((x) => x.id === row.id);
+            if (i >= 0) { const copy = [...prev]; copy[i] = row; return copy; }
+            return [...prev, row];
+          });
+        })
         .subscribe();
     })();
-
     return () => { cancelled = true; if (channel) supabase.removeChannel(channel); };
-  }, [athleteId, historyDays]);
+  }, [user, athleteId, historyDays]);
 
-  // Manual logging (a session the watch missed). RLS only allows source='manual', id 'manual:*'.
+  // Manual logging (RLS: source='manual', id 'manual:*', own athlete only).
   const logManual = useCallback(async ({ key, sport, hours, distMi }) => {
     if (!athleteId || !supabase) return { error: "Connect Strava first" };
     const uuid = (typeof crypto !== "undefined" && crypto.randomUUID)
@@ -110,28 +116,24 @@ export function useLiveActivities({ historyDays = 180 } = {}) {
     const { error } = await supabase.from("activities").insert({
       id: "manual:" + uuid,
       athlete_id: Number(athleteId),
-      day: key,
-      sport,
-      hours,
+      day: key, sport, hours,
       distance_m: distMi ? distMi * MI : null,
       source: "manual",
     });
     if (error) console.error(error);
-    return { error }; // realtime echoes the row back — no local mutation needed
+    return { error };
   }, [athleteId]);
 
   const disconnect = useCallback(() => {
     lsDel("strava_athlete");
-    setAthleteId(null);
     setActivities([]);
     setStatus("disconnected");
-    // To fully revoke, remove the app at strava.com/settings/apps —
-    // the webhook's deauthorization event then wipes server-side data.
+    // Full disconnect = sign out (identity is the login now). The UI's Sign out does that.
+    // To revoke Strava entirely, remove the app at strava.com/settings/apps.
   }, []);
 
-  const connectUrl = (stravaConfigured && typeof window !== "undefined")
-    ? `${FUNCTIONS_URL}/strava-auth?return=${encodeURIComponent(window.location.origin + window.location.pathname)}`
-    : "";
+  // Button for an already-signed-in account (e.g. Google) to attach Strava data.
+  const connectUrl = (stravaConfigured && typeof window !== "undefined") ? stravaConnectUrl() : "";
 
-  return { activities, athleteId, status, logManual, disconnect, connectUrl, configured: stravaConfigured };
+  return { activities, athleteId, status, user, authReady, logManual, disconnect, connectUrl, configured: stravaConfigured };
 }
